@@ -225,6 +225,10 @@ VOID ServiceInstall()
 		NULL,                      // LocalSystem account 
 		NULL);                     // no password 
 
+	SERVICE_DESCRIPTION description = { L"Prevents the disk drive from  going to sleep." };
+
+	ChangeServiceConfig2(schService, SERVICE_CONFIG_DESCRIPTION, &description);
+
 	if (schService == NULL)
 	{
 		printf("CreateService failed (%d)\n", GetLastError());
