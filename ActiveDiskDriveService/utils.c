@@ -5,22 +5,24 @@ char* GetApplicationPath()
 	HMODULE hModule = GetModuleHandle(NULL);
 	char* path = malloc(MAX_PATH);
 	memset(path, 0, MAX_PATH);
-	DWORD result = GetModuleFileName(hModule, path, MAX_PATH - 1);
-	DWORD lastError = GetLastError();
-
+	DWORD result = GetModuleFileName(hModule, path, MAX_PATH);
+	size_t size = strlen(path);
 	if (result == 0)
 	{
 		free(path);
-		path = 0;
+		path = NULL;
 	}
 	else
 	{
-		char* p = *path;
-		free(path);
-		path = 0;
-		return p;
+		for (size_t i = strlen(path); i > 0; i--)
+		{
+			if (path[i] == '\\')
+			{
+				path[i] = 0;
+				break;
+			}
+		}
 	}
-	return NULL;
-	 // TODO strip exe from path
+	return path;
 }
 

@@ -1,4 +1,4 @@
-#include <windows.h>
+#include <Windows.h>
 #include <tchar.h>
 #include <strsafe.h>
 
@@ -66,6 +66,7 @@ VOID WINAPI ServiceMain(DWORD argc, LPSTR *argv)
 
 	WaitForSingleObject(thread, INFINITE);
 
+	CloseHandle(thread);
 	CloseHandle(g_SvcStopEvent);
 
 	ReportServiceStatus(SERVICE_STOPPED, NO_ERROR, 0);
@@ -78,17 +79,23 @@ DWORD WINAPI ServiceWorkerThread(LPVOID lparam)
 	{
 		if (count == 8)
 		{
-			FILE *f;
-			if (fopen_s(&f, "temp.adds", "w+") == 0)
+			FILE *file;
+			if (fopen_s(&file, STATE_OBJECT, "w+") == 0)
 			{
+				fclose(file);
+				DWORD attributes = GetFileAttributes(STATE_OBJECT);
+				if (attributes == INVALID_FILE_ATTRIBUTES)
+					printf("Failed to get file attributes\n"); // LOG
+				else if ((attributes & FILE_ATTRIBUTE_HIDDEN) == 0)
+					SetFileAttributes(STATE_OBJECT, attributes | FILE_ATTRIBUTE_HIDDEN);
+
+				fclose(file);
 				count = 0;
 			}
 			else
-				printf("Error opening file!\n");
-
-			if (f)
-				fclose(f);
+				printf("Error opening file!\n"); // LOG
 		}
+
 		Sleep(3000);
 		count++;
 	}
@@ -97,7 +104,7 @@ DWORD WINAPI ServiceWorkerThread(LPVOID lparam)
 
 VOID ServiceInit(DWORD argc, LPSTR *argv)
 {
-	ReportServiceStatus(SERVICE_START_PENDING, NO_ERROR, 3000);
+	ReportServiceStatus(SERVICE_START_PENDING, NO_ERROR, 1000);
 
 	g_SvcStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 

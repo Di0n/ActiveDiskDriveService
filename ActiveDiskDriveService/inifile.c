@@ -2,9 +2,10 @@
 
 LPSTR ReadString(LPCSTR iniFile, LPCSTR section, LPCSTR key, LPCSTR defaultValue)
 {
-	char result[255];
-	memset(result, 0x00, 255);
-	GetPrivateProfileString(section, key, defaultValue, result, 255, iniFile);
+	const size_t bufferSize = 256;
+	char* result = malloc(bufferSize);
+	memset(result, 0, bufferSize);
+	GetPrivateProfileString(section, key, defaultValue, result, (DWORD)bufferSize, iniFile);
 	return result;
 }
 
