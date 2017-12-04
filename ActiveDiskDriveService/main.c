@@ -1,13 +1,20 @@
-#include <windows.h>
+#include <Windows.h>
 #include <tchar.h>
 #include <strsafe.h>
 
-#define SVCNAME TEXT("ActiveDiskDriveService")
-#define SVC_ERROR		((DWORD)0xC0020001L)
+#define SVC_NAME			TEXT("ActiveDiskDriveService")
+#define SVC_DISPLAY_NAME	TEXT("Active Disk Drive Service")
+#define SVC_START_TYPE		SERVICE_DEMAND_START
+#define SVC_ERROR			((DWORD)0xC0020001L)
+#define SVC_DESCRIPTION		TEXT("Prevents the disk drive from  going to sleep.")
 
-SERVICE_STATUS			gSvcStatus;
-SERVICE_STATUS_HANDLE	gSvcStatusHandle;
-HANDLE					gSvcStopEvent = NULL;
+#define STATE_OBJECT		TEXT("so.adds")
+
+
+SERVICE_STATUS			g_SvcStatus;
+SERVICE_STATUS_HANDLE	g_SvcStatusHandle;
+HANDLE					g_SvcStopEvent = NULL;
+
 
 VOID ServiceInstall(void);
 VOID WINAPI ServiceMain(DWORD argc, LPSTR *argv);
@@ -28,7 +35,7 @@ void __cdecl _tmain(int argc, TCHAR *argv[])
 
 	SERVICE_TABLE_ENTRY DispatchTable[] =
 	{
-		{ SVCNAME, (LPSERVICE_MAIN_FUNCTION)ServiceMain },
+		{ SVC_NAME, (LPSERVICE_MAIN_FUNCTION)ServiceMain },
 		{ NULL, NULL }
 	};
 
@@ -42,18 +49,16 @@ VOID WINAPI ServiceMain(DWORD argc, LPSTR *argv)
 {
 	DWORD status = E_FAIL;
 
-	gSvcStatusHandle = RegisterServiceCtrlHandler(SVCNAME, ServiceCtrlHandler);
+	g_SvcStatusHandle = RegisterServiceCtrlHandler(SVC_NAME, ServiceCtrlHandler);
 
-	if (!gSvcStatusHandle)
+	if (!g_SvcStatusHandle)
 	{
 		ServiceReportEvent(TEXT("RegisterServiceCtrlHandler"));
 		return;
 	}
 
-	gSvcStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
-	gSvcStatus.dwServiceSpecificExitCode = 0;
-
-	ReportServiceStatus(SERVICE_START_PENDING, NO_ERROR, 3000);
+	g_SvcStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
+	g_SvcStatus.dwServiceSpecificExitCode = 0;
 
 	ServiceInit(argc, argv);
 
@@ -61,7 +66,8 @@ VOID WINAPI ServiceMain(DWORD argc, LPSTR *argv)
 
 	WaitForSingleObject(thread, INFINITE);
 
-	CloseHandle(gSvcStopEvent);
+	CloseHandle(thread);
+	CloseHandle(g_SvcStopEvent);
 
 	ReportServiceStatus(SERVICE_STOPPED, NO_ERROR, 0);
 }
@@ -69,22 +75,27 @@ VOID WINAPI ServiceMain(DWORD argc, LPSTR *argv)
 DWORD WINAPI ServiceWorkerThread(LPVOID lparam)
 {
 	int count = 0;
-	while (WaitForSingleObject(gSvcStopEvent, 0) != WAIT_OBJECT_0)
+	while (WaitForSingleObject(g_SvcStopEvent, 0) != WAIT_OBJECT_0)
 	{
 		if (count == 8)
 		{
-			FILE *f;
-			errno_t error = fopen_s(&f, "D:\\Program Files (x86)\\ADDS\\temp.adds", "w+");
-			if (error == 0)
+			FILE *file;
+			if (fopen_s(&file, STATE_OBJECT, "w+") == 0)
 			{
+				fclose(file);
+				DWORD attributes = GetFileAttributes(STATE_OBJECT);
+				if (attributes == INVALID_FILE_ATTRIBUTES)
+					printf("Failed to get file attributes\n"); // LOG
+				else if ((attributes & FILE_ATTRIBUTE_HIDDEN) == 0)
+					SetFileAttributes(STATE_OBJECT, attributes | FILE_ATTRIBUTE_HIDDEN);
+
+				fclose(file);
 				count = 0;
 			}
 			else
-				printf("Error opening file!\n");
-
-			if (f)
-				fclose(f);
+				printf("Error opening file!\n"); // LOG
 		}
+
 		Sleep(3000);
 		count++;
 	}
@@ -93,9 +104,11 @@ DWORD WINAPI ServiceWorkerThread(LPVOID lparam)
 
 VOID ServiceInit(DWORD argc, LPSTR *argv)
 {
-	gSvcStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	ReportServiceStatus(SERVICE_START_PENDING, NO_ERROR, 1000);
 
-	if (gSvcStopEvent == NULL)
+	g_SvcStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+	if (g_SvcStopEvent == NULL)
 	{
 		ReportServiceStatus(SERVICE_STOPPED, NO_ERROR, 0);
 		return;
@@ -112,21 +125,21 @@ VOID ReportServiceStatus(DWORD dwCurrentState,
 
 	// Fill in the SERVICE_STATUS structure.
 
-	gSvcStatus.dwCurrentState = dwCurrentState;
-	gSvcStatus.dwWin32ExitCode = dwWin32ExitCode;
-	gSvcStatus.dwWaitHint = dwWaitHint;
+	g_SvcStatus.dwCurrentState = dwCurrentState;
+	g_SvcStatus.dwWin32ExitCode = dwWin32ExitCode;
+	g_SvcStatus.dwWaitHint = dwWaitHint;
 
 	if (dwCurrentState == SERVICE_START_PENDING)
-		gSvcStatus.dwControlsAccepted = 0;
-	else gSvcStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP;
+		g_SvcStatus.dwControlsAccepted = 0;
+	else g_SvcStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP;
 
 	if ((dwCurrentState == SERVICE_RUNNING) ||
 		(dwCurrentState == SERVICE_STOPPED))
-		gSvcStatus.dwCheckPoint = 0;
-	else gSvcStatus.dwCheckPoint = dwCheckPoint++;
+		g_SvcStatus.dwCheckPoint = 0;
+	else g_SvcStatus.dwCheckPoint = dwCheckPoint++;
 
 	// Report the status of the service to the SCM.
-	SetServiceStatus(gSvcStatusHandle, &gSvcStatus);
+	SetServiceStatus(g_SvcStatusHandle, &g_SvcStatus);
 }
 
 VOID WINAPI ServiceCtrlHandler(DWORD dwCtrl)
@@ -140,8 +153,8 @@ VOID WINAPI ServiceCtrlHandler(DWORD dwCtrl)
 
 		// Signal the service to stop.
 
-		SetEvent(gSvcStopEvent);
-		ReportServiceStatus(gSvcStatus.dwCurrentState, NO_ERROR, 0);
+		SetEvent(g_SvcStopEvent);
+		ReportServiceStatus(g_SvcStatus.dwCurrentState, NO_ERROR, 0);
 
 		return;
 
@@ -160,13 +173,13 @@ VOID ServiceReportEvent(LPTSTR szFunction)
 	LPCTSTR lpszStrings[2];
 	TCHAR Buffer[80];
 
-	hEventSource = RegisterEventSource(NULL, SVCNAME);
+	hEventSource = RegisterEventSource(NULL, SVC_NAME);
 
 	if (NULL != hEventSource)
 	{
 		StringCchPrintf(Buffer, 80, TEXT("%s failed with %d"), szFunction, GetLastError());
 
-		lpszStrings[0] = SVCNAME;
+		lpszStrings[0] = SVC_NAME;
 		lpszStrings[1] = Buffer;
 
 		ReportEvent(hEventSource,        // event log handle
@@ -189,7 +202,7 @@ VOID ServiceInstall()
 	SC_HANDLE schService;
 	TCHAR szPath[MAX_PATH];
 
-	if (!GetModuleFileName("", szPath, MAX_PATH))
+	if (!GetModuleFileName(NULL, szPath, MAX_PATH)) // NULL = ""
 	{
 		printf("Cannot install service (%d)\n", GetLastError());
 		return;
@@ -211,23 +224,23 @@ VOID ServiceInstall()
 	// Create the service
 
 	schService = CreateService(
-		schSCManager,              // SCM database 
-		SVCNAME,                   // name of service 
-		SVCNAME,                   // service name to display 
-		SERVICE_ALL_ACCESS,        // desired access 
-		SERVICE_WIN32_OWN_PROCESS, // service type 
-		SERVICE_DEMAND_START,      // start type 
-		SERVICE_ERROR_NORMAL,      // error control type 
-		szPath,                    // path to service's binary 
-		NULL,                      // no load ordering group 
-		NULL,                      // no tag identifier 
-		NULL,                      // no dependencies 
-		NULL,                      // LocalSystem account 
-		NULL);                     // no password 
+		schSCManager,				// SCM database 
+		SVC_NAME,                   // name of service 
+		SVC_DISPLAY_NAME,			// service name to display 
+		SERVICE_ALL_ACCESS,			// desired access 
+		SERVICE_WIN32_OWN_PROCESS,	// service type 
+		SVC_START_TYPE,				// start type 
+		SERVICE_ERROR_NORMAL,		// error control type 
+		szPath,						// path to service's binary 
+		NULL,						// no load ordering group 
+		NULL,						// no tag identifier 
+		NULL,						// no dependencies 
+		NULL,						// LocalSystem account 
+		NULL);						// no password 
 
-	SERVICE_DESCRIPTION description = { L"Prevents the disk drive from  going to sleep." };
+	
 
-	ChangeServiceConfig2(schService, SERVICE_CONFIG_DESCRIPTION, &description);
+	
 
 	if (schService == NULL)
 	{
@@ -235,7 +248,13 @@ VOID ServiceInstall()
 		CloseServiceHandle(schSCManager);
 		return;
 	}
-	else printf("Service installed successfully\n");
+	else
+	{
+		SERVICE_DESCRIPTION description = { SVC_DESCRIPTION };
+		ChangeServiceConfig2(schService, SERVICE_CONFIG_DESCRIPTION, &description);
+
+		printf("Service installed successfully\n");
+	}
 
 	CloseServiceHandle(schService);
 	CloseServiceHandle(schSCManager);
