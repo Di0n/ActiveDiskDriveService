@@ -3,6 +3,8 @@
 
 #include <Windows.h>
 
-char* GetApplicationPath();
+TCHAR GetApplicationPath();
+void GetApplicationDir(char* buffer, size_t size);
+
 
 #endif // !__UTILS__
