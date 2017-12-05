@@ -1,6 +1,7 @@
 #include <Windows.h>
 #include <tchar.h>
 #include <strsafe.h>
+#include "utils.h"
 
 #define SVC_NAME			TEXT("ActiveDiskDriveService")
 #define SVC_DISPLAY_NAME	TEXT("Active Disk Drive Service")
@@ -21,7 +22,7 @@ VOID WINAPI ServiceMain(DWORD argc, LPSTR *argv);
 VOID WINAPI ServiceCtrlHandler(DWORD);
 VOID ServiceInit(DWORD, LPSTR *);
 
-VOID ServiceReportEvent(LPSTR);
+VOID ServiceReportEvent(LPCTSTR, const WORD, const DWORD);
 VOID ReportServiceStatus(DWORD, DWORD, DWORD);
 DWORD WINAPI ServiceWorkerThread(LPVOID lpParam);
 
@@ -41,7 +42,7 @@ void __cdecl _tmain(int argc, TCHAR *argv[])
 
 	if (!StartServiceCtrlDispatcher(DispatchTable))
 	{
-		ServiceReportEvent(TEXT("StartServiceCtrlDispatcher"));
+		ServiceReportEvent(TEXT("StartServiceCtrlDispatcher"), EVENTLOG_ERROR_TYPE, GetLastError());
 	}
 }
 
@@ -53,7 +54,7 @@ VOID WINAPI ServiceMain(DWORD argc, LPSTR *argv)
 
 	if (!g_SvcStatusHandle)
 	{
-		ServiceReportEvent(TEXT("RegisterServiceCtrlHandler"));
+		ServiceReportEvent(TEXT("RegisterServiceCtrlHandler"), EVENTLOG_ERROR_TYPE, GetLastError());
 		return;
 	}
 
@@ -77,27 +78,37 @@ DWORD WINAPI ServiceWorkerThread(LPVOID lparam)
 	int count = 0;
 	while (WaitForSingleObject(g_SvcStopEvent, 0) != WAIT_OBJECT_0)
 	{
-		if (count == 8)
+		Sleep(3000);
+		if (count++ == 8)
 		{
 			FILE *file;
-			if (fopen_s(&file, STATE_OBJECT, "w+") == 0)
+			TCHAR appDir[MAX_PATH] = { 0 };
+			GetApplicationDir(appDir, sizeof(appDir));
+			TCHAR filePath[MAX_PATH];
+			const int chars = snprintf(filePath, sizeof(filePath), "%s%s", appDir, STATE_OBJECT);
+
+			if (chars < 0 || chars >= sizeof(filePath))
+			{
+				ServiceReportEvent(chars < 0 ? TEXT("Encoding error") : TEXT("String incomplete"), EVENTLOG_ERROR_TYPE, 0);
+				continue;
+			}
+
+			const errno_t errorNumber = fopen_s(&file, filePath, "w+");
+
+			if (errorNumber == 0)
 			{
 				fclose(file);
-				DWORD attributes = GetFileAttributes(STATE_OBJECT);
+				DWORD attributes = GetFileAttributes(filePath);
 				if (attributes == INVALID_FILE_ATTRIBUTES)
 					printf("Failed to get file attributes\n"); // LOG
 				else if ((attributes & FILE_ATTRIBUTE_HIDDEN) == 0)
-					SetFileAttributes(STATE_OBJECT, attributes | FILE_ATTRIBUTE_HIDDEN);
+					SetFileAttributes(filePath, attributes | FILE_ATTRIBUTE_HIDDEN);
 
 				fclose(file);
 				count = 0;
 			}
-			else
-				printf("Error opening file!\n"); // LOG
+			else ServiceReportEvent(TEXT("Could not open state object file."), EVENTLOG_ERROR_TYPE, errorNumber);
 		}
-
-		Sleep(3000);
-		count++;
 	}
 	return ERROR_SUCCESS;
 }
@@ -167,14 +178,44 @@ VOID WINAPI ServiceCtrlHandler(DWORD dwCtrl)
 
 }
 
+VOID ServiceReportEvent(LPCTSTR msg, const WORD eventType, const DWORD errorCode)
+{
+	HANDLE hEventSource;
+	LPCTSTR lpszStrings[2];
+	TCHAR Buffer[256];
+
+	hEventSource = RegisterEventSource(NULL, SVC_NAME);
+
+	if (hEventSource != NULL)
+	{
+		StringCchPrintf(Buffer, 256, TEXT("%s\nError code: %d"), msg, errorCode);
+		
+		lpszStrings[0] = SVC_NAME;
+		lpszStrings[1] = Buffer;
+
+		ReportEventA(hEventSource,        // event log handle
+			eventType,				// event type
+			0,                   // event category
+			SVC_ERROR,           // event identifier
+			NULL,                // no security identifier
+			2,                   // size of lpszStrings array
+			0,                   // no binary data
+			lpszStrings,         // array of strings
+			NULL);               // no binary data
+
+		DeregisterEventSource(hEventSource);
+	}
+}
+
+/*
 VOID ServiceReportEvent(LPTSTR szFunction)
 {
 	HANDLE hEventSource;
 	LPCTSTR lpszStrings[2];
 	TCHAR Buffer[80];
-
+	
 	hEventSource = RegisterEventSource(NULL, SVC_NAME);
-
+	
 	if (NULL != hEventSource)
 	{
 		StringCchPrintf(Buffer, 80, TEXT("%s failed with %d"), szFunction, GetLastError());
@@ -194,8 +235,7 @@ VOID ServiceReportEvent(LPTSTR szFunction)
 
 		DeregisterEventSource(hEventSource);
 	}
-}
-
+} */
 VOID ServiceInstall()
 {
 	SC_HANDLE schSCManager;
