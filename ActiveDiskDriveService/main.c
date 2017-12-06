@@ -81,7 +81,6 @@ DWORD WINAPI ServiceWorkerThread(LPVOID lparam)
 		Sleep(3000);
 		if (((count+1) > 8 ? 8 : count++) == 8)
 		{
-			FILE *file;
 			TCHAR appDir[MAX_PATH] = { 0 };
 			GetApplicationDir(appDir, sizeof(appDir));
 			TCHAR filePath[MAX_PATH];
@@ -93,21 +92,14 @@ DWORD WINAPI ServiceWorkerThread(LPVOID lparam)
 				continue;
 			}
 
-			const errno_t errorNumber = fopen_s(&file, "D:\\Program Files\\ActiveDiskDriveService\\so.adds", "w+");
+			FILE *file;
+			const errno_t errorNumber = fopen_s(&file, filePath, "w+");
 
-			if (errorNumber == 0)
-			{
-				if (file) fclose(file);
+			if (errorNumber == 0) count = 0;
 
-				DWORD attributes = GetFileAttributes(filePath);
-				if (attributes == INVALID_FILE_ATTRIBUTES)
-					ServiceReportEvent(TEXT("Failed to get file attributes"), EVENTLOG_ERROR_TYPE, GetLastError());
-				else if ((attributes & FILE_ATTRIBUTE_HIDDEN) == 0)
-					SetFileAttributes(filePath, attributes | FILE_ATTRIBUTE_HIDDEN);
-
-				count = 0;
-			}
 			else ServiceReportEvent(TEXT("Could not open state object file."), EVENTLOG_ERROR_TYPE, errorNumber);
+
+			if (file) fclose(file);
 		}
 	}
 	return ERROR_SUCCESS;
