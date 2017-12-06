@@ -26,7 +26,7 @@ TCHAR GetApplicationPath()
 	return path;
 }
 
-void GetApplicationDir(char* buffer, size_t size)
+void GetApplicationDir(char* buffer, const size_t size)
 {
 	TCHAR path[MAX_PATH];
 	if (!GetModuleFileName(NULL, path, MAX_PATH)) 
