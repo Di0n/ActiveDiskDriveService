@@ -75,11 +75,11 @@ VOID WINAPI ServiceMain(DWORD argc, LPSTR *argv)
 
 DWORD WINAPI ServiceWorkerThread(LPVOID lparam)
 {
-	int count = 0;
+	int count = 8;
 	while (WaitForSingleObject(g_SvcStopEvent, 0) != WAIT_OBJECT_0)
 	{
 		Sleep(3000);
-		if (count++ == 8)
+		if (((count+1) > 8 ? 8 : count++) == 8)
 		{
 			FILE *file;
 			TCHAR appDir[MAX_PATH] = { 0 };
@@ -93,18 +93,18 @@ DWORD WINAPI ServiceWorkerThread(LPVOID lparam)
 				continue;
 			}
 
-			const errno_t errorNumber = fopen_s(&file, filePath, "w+");
+			const errno_t errorNumber = fopen_s(&file, "D:\\Program Files\\ActiveDiskDriveService\\so.adds", "w+");
 
 			if (errorNumber == 0)
 			{
-				fclose(file);
+				if (file) fclose(file);
+
 				DWORD attributes = GetFileAttributes(filePath);
 				if (attributes == INVALID_FILE_ATTRIBUTES)
 					ServiceReportEvent(TEXT("Failed to get file attributes"), EVENTLOG_ERROR_TYPE, GetLastError());
 				else if ((attributes & FILE_ATTRIBUTE_HIDDEN) == 0)
 					SetFileAttributes(filePath, attributes | FILE_ATTRIBUTE_HIDDEN);
 
-				fclose(file);
 				count = 0;
 			}
 			else ServiceReportEvent(TEXT("Could not open state object file."), EVENTLOG_ERROR_TYPE, errorNumber);
@@ -160,7 +160,7 @@ VOID WINAPI ServiceCtrlHandler(DWORD dwCtrl)
 	switch (dwCtrl)
 	{
 	case SERVICE_CONTROL_STOP:
-		ReportServiceStatus(SERVICE_STOP_PENDING, NO_ERROR, 0);
+		ReportServiceStatus(SERVICE_STOP_PENDING, NO_ERROR, 3000);
 
 		// Signal the service to stop.
 
