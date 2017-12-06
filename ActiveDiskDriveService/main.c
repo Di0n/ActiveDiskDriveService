@@ -100,7 +100,7 @@ DWORD WINAPI ServiceWorkerThread(LPVOID lparam)
 				fclose(file);
 				DWORD attributes = GetFileAttributes(filePath);
 				if (attributes == INVALID_FILE_ATTRIBUTES)
-					printf("Failed to get file attributes\n"); // LOG
+					ServiceReportEvent(TEXT("Failed to get file attributes"), EVENTLOG_ERROR_TYPE, GetLastError());
 				else if ((attributes & FILE_ATTRIBUTE_HIDDEN) == 0)
 					SetFileAttributes(filePath, attributes | FILE_ATTRIBUTE_HIDDEN);
 
